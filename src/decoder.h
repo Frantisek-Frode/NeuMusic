@@ -4,6 +4,7 @@
 #include <libavformat/avformat.h>
 
 typedef struct {
+	ChannelConsumer* events;
 	Channel* output;
 	AVFormatContext* format_ctx;
 	AVCodecParameters* codec_params;

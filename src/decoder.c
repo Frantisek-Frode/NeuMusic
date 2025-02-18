@@ -1,4 +1,6 @@
 #include "decoder.h"
+#include "channel.h"
+#include "mpris.h"
 #include <libavutil/channel_layout.h>
 #include <pthread.h>
 #include <math.h>
@@ -155,6 +157,21 @@ void* decode(void* _args) {
 
 			// play
 			channel_write(args.output, dst_data[0], dst_linesize);
+
+			// check for events
+			while (sizeof(PlayerAction) <= channel_available(args.events)) {
+				PlayerAction action;
+				channel_read(args.events, sizeof(PlayerAction), &action);
+
+				switch (action) {
+				case ACTION_STOP:
+				case ACTION_NEXT:
+				case ACTION_PREV:
+					// TODO: rename macro?
+					goto FAIL;
+				default: break;
+				}
+			}
 		}
 
 NEXT_PACKET:
@@ -162,8 +179,8 @@ NEXT_PACKET:
 	}
 
 	// cleanup
-FREE_DEST:
 	if (dst_data) av_freep(dst_data[0]);
+FREE_DEST:
 	av_freep(dst_data);
 FREE_RESAMPLER:
 	swr_free(&swr_ctx);

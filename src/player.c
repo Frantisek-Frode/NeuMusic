@@ -61,6 +61,10 @@ void* player_play(void* _args) {
 			case ACTION_STOP:
 			case ACTION_NEXT:
 			case ACTION_PREV:
+				// drain the data channel in order to make the decoder read events
+				while (buff_size <= channel_available(args->data)) {
+					channel_read(args->data, buff_size, buffer);
+				}
 				goto STOP;
 			default: break;
 			}
