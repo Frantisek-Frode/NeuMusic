@@ -35,4 +35,5 @@ void channel_finish_writing(Channel* channel);
 /// Returns number of elements read.
 /// If 0 is returned, channel producer has finished.
 int channel_read(ChannelConsumer* consumer, int count, void* dest);
+int channel_available(ChannelConsumer* consumer);
 

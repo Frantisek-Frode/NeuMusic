@@ -3,10 +3,18 @@
 #include <pthread.h>
 #include "channel.h"
 #include "decoder.h"
+#include "mpris.h"
 #include "player.h"
+#include <unistd.h>
+#include <stdbool.h>
 
 int main(int argc, const char** argv) {
 	srand(time(NULL));
+
+	Channel* event_channel = channel_alloc(5 * sizeof(PlayerAction), 1);
+	MprisContext mpris_ctx;
+	bool mpris = 0 <= mpris_init(&mpris_ctx);
+	mpris_ctx.event_channel = event_channel;
 
 	Channel* audio_channel = channel_alloc(44100, 1);
 
@@ -24,12 +32,20 @@ int main(int argc, const char** argv) {
 	pthread_t play_thread;
 	PlayerArgs play_args = {
 		.data = &audio_channel->consumers[0],
-		.rate = dec_args.codec_params->sample_rate
+		.rate = dec_args.codec_params->sample_rate,
+		.events = &event_channel->consumers[0],
 	};
 	pthread_create(&play_thread, NULL, player_play, &play_args);
+// -----
 
-	// TODO: handle input
+	for (;;) {
+		if (mpris) {
+			mpris_check(&mpris_ctx);
+		}
+		usleep(10000);
+	}
 
+// -----
 	// cleanup
 	pthread_join(dec_thread, NULL);
 	decoder_free(&dec_args);
@@ -39,6 +55,11 @@ int main(int argc, const char** argv) {
 
 FAIL:
 	channel_free(audio_channel);
+
+	if (mpris) {
+		mpris_free(&mpris_ctx);
+	}
+	channel_free(event_channel);
 
 	return 0;
 }

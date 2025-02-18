@@ -174,3 +174,9 @@ int channel_read(ChannelConsumer* consumer, int count, void* result) {
 	return available;
 }
 
+int channel_available(ChannelConsumer* consumer) {
+	Channel* channel = consumer->channel;
+
+	return ring_available(channel->producer_cursor, consumer->cursor, channel->capacity);
+}
+
