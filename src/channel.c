@@ -17,17 +17,17 @@
 
 
 int ring_capacity(int writer, int reader, int capacity) {
-	if (reader > writer) reader += capacity;
-	return reader - writer;
+	if (writer < reader) return reader - writer - 1;
+	else return capacity - 1 + reader - writer;
 }
 
 int ring_available(int writer, int reader, int capacity) {
-	if (reader > writer) writer += capacity;
-	return writer - reader;
+	if (reader <= writer) return writer - reader;
+	else return writer - reader + capacity;
 }
 
 void copy_to_ring(void* ring, int capacity, int writer, void* src, int count) {
-	if (writer + count < capacity) {
+	if (writer + count <= capacity) {
 		memcpy((char*)ring + writer, src, count);
 	} else {
 		int right = capacity - writer;
@@ -37,7 +37,7 @@ void copy_to_ring(void* ring, int capacity, int writer, void* src, int count) {
 }
 
 void copy_from_ring(void* ring, int capacity, int reader, void* dest, int count) {
-	if (reader + count < capacity) {
+	if (reader + count <= capacity) {
 		memcpy(dest, (char*)ring + reader, count);
 	} else {
 		int right = capacity - reader;
@@ -111,66 +111,64 @@ void channel_free(Channel* channel) {
 
 void channel_write(Channel* channel, void* data, int size) {
 	int next = channel->producer_cursor + size;
-	if (next > channel->capacity) next -= channel->capacity;
+	if (next >= channel->capacity) next -= channel->capacity;
 
-	bool ready_to_write = true;
-	do {
-		for (int i = 0; i < channel->consumer_count; i++) {
-			int space = ring_capacity(channel->producer_cursor, channel->consumers[i].cursor, channel->capacity);
-			if (space < size) {
-				ready_to_write = false;
-				goto WAIT;
-			}
+	pthread_mutex_lock(&channel->prod_mutex);
+	for (int i = 0; i < channel->consumer_count; i++) {
+		int space = ring_capacity(channel->producer_cursor, channel->consumers[i].cursor, channel->capacity);
+
+		while (space < size) {
+			pthread_cond_wait(&channel->producer_cond, &channel->prod_mutex);
+			space = ring_capacity(channel->producer_cursor, channel->consumers[i].cursor, channel->capacity);
 		}
-		ready_to_write = true;
-		break;
-WAIT:
-		pthread_mutex_lock(&channel->prod_mutex);
-		pthread_cond_wait(&channel->producer_cond, &channel->prod_mutex);
-		pthread_mutex_unlock(&channel->prod_mutex);
-	} while (!ready_to_write);
+	}
+	pthread_mutex_unlock(&channel->prod_mutex);
 
 	copy_to_ring(channel->data, channel->capacity, channel->producer_cursor, data, size);
 	channel->producer_cursor = next;
+
+	pthread_mutex_lock(&channel->cons_mutex);
 	pthread_cond_broadcast(&channel->producer_signal);
+	pthread_mutex_unlock(&channel->cons_mutex);
 }
 
 void channel_finish_writing(Channel* channel) {
 	channel->finished = true;
+
+	pthread_mutex_lock(&channel->cons_mutex);
 	pthread_cond_broadcast(&channel->producer_signal);
+	pthread_mutex_unlock(&channel->cons_mutex);
 }
 
 int channel_read(ChannelConsumer* consumer, int count, void* result) {
 	Channel* channel = consumer->channel;
 	int available;
 
+	pthread_mutex_lock(&channel->cons_mutex);
 	for (;;) {
 		int ready = ring_available(channel->producer_cursor, consumer->cursor, channel->capacity);
 		if (ready >= count) {
 			available = count;
-			copy_from_ring(channel->data, channel->capacity, consumer->cursor, result, count);
-			goto FINISH;
+			break;
 		} else if (channel->finished) {
-			if (ready == 0) return 0;
-			else {
-				available = ready;
-				copy_from_ring(channel->data, channel->capacity, consumer->cursor, result, ready);
-				goto FINISH;
-			}
+			available = ready;
+			break;
+		} else {
+			pthread_cond_wait(&channel->producer_signal, &channel->cons_mutex);
 		}
-
-		// wait only if there are not enough data produced
-		pthread_mutex_lock(&channel->cons_mutex);
-		pthread_cond_wait(&channel->producer_signal, &channel->cons_mutex);
-		pthread_mutex_unlock(&channel->cons_mutex);
 	}
+	pthread_mutex_unlock(&channel->cons_mutex);
 
-FINISH:
+	if (available == 0) return 0;
+	copy_from_ring(channel->data, channel->capacity, consumer->cursor, result, available);
+
 	consumer->cursor += available;
-	if (consumer->cursor == channel->capacity) consumer->cursor = 0;
+	if (consumer->cursor >= channel->capacity) consumer->cursor -= channel->capacity;
 
 	if (!channel->finished) {
+		pthread_mutex_lock(&channel->prod_mutex);
 		pthread_cond_signal(&channel->producer_cond);
+		pthread_mutex_unlock(&channel->prod_mutex);
 	}
 
 	return available;
