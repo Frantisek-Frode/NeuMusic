@@ -1,3 +1,10 @@
-build/mpris.o: src/mpris.c
+build/music: src/* Makefile
 	mkdir -p build
-	gcc `pkg-config --cflags dbus-1` $< -o $@ `pkg-config --libs dbus-1`
+	gcc -ggdb\
+		`pkg-config --cflags dbus-1`\
+		src/*.c -o $@\
+		-lm\
+		-lao\
+		-lavcodec -lavformat -lavutil -lswresample\
+		`pkg-config --libs dbus-1`
+
