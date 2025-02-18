@@ -1,15 +1,20 @@
 #pragma once
 #include "channel.h"
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 
 typedef struct {
 	Channel* output;
-	double freq;
-	int sample_rate;
-	double duration;
-	const char* file;
-} DecoderArgs;
+	AVFormatContext* format_ctx;
+	AVCodecParameters* codec_params;
+	AVCodec* codec;
+	int audio_stream;
+} DecoderContext;
 
-/// Takes `DecoderArgs*` as arguments.
+
+int decoder_init(const char* path, DecoderContext* result);
+void decoder_free(DecoderContext* ctx);
+/// Takes `DecoderContext*` as arguments.
 /// Writes samples into `args->output` and closes it when done.
 void* decode(void* args);
 

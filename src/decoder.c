@@ -9,85 +9,101 @@
 #include <libswresample/swresample.h>
 #include <libavutil/opt.h>
 
-#define SAMPLE_RATE 44100
 
 #define failif(cond, ...) if (cond) { fprintf(stderr, __VA_ARGS__); goto FAIL; }
 
-void* decode(void* _args) {
+int decoder_init(const char* path, DecoderContext* result) {
 #define FAIL END
-	DecoderArgs args = *(DecoderArgs*)_args;
 
-	AVFormatContext *pFormatContext = avformat_alloc_context();
-	failif (NULL == pFormatContext, "Decoder ERROR could not allocate memory for Format Context.\n");
+	DecoderContext res;
+
+	AVFormatContext* format_ctx = avformat_alloc_context();
+	failif (NULL == format_ctx, "Decoder ERROR could not allocate memory for Format Context.\n");
+	res.format_ctx = format_ctx;
 #undef FAIL
 #define FAIL FREE_FORMAT
 
-	failif (0 > avformat_open_input(&pFormatContext, args.file, NULL, NULL), "Decoder ERROR could not open the file.\n");
+	failif (0 > avformat_open_input(&format_ctx, path, NULL, NULL), "Decoder ERROR could not open the file.\n");
 #undef FAIL
 #define FAIL CLOSE_FILE
 
-	failif (0 > avformat_find_stream_info(pFormatContext, NULL), "Decoder ERROR could not get the stream info.\n");
+	failif (0 > avformat_find_stream_info(format_ctx, NULL), "Decoder ERROR could not get the stream info.\n");
 
-	const AVCodec *pCodec = NULL;
-	AVCodecParameters *pCodecParameters =  NULL;
-	int audio_stream_index = -1;
-
-	for (int i = 0; i < pFormatContext->nb_streams; i++)
+	res.audio_stream = -1;
+	for (int i = 0; i < format_ctx->nb_streams; i++)
 	{
-		AVCodecParameters *pLocalCodecParameters =  NULL;
-		pLocalCodecParameters = pFormatContext->streams[i]->codecpar;
+		AVCodecParameters* codec_params = format_ctx->streams[i]->codecpar;
+		if (codec_params->codec_type != AVMEDIA_TYPE_AUDIO) continue;
 
-		const AVCodec *pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
-		failif (NULL == pLocalCodec, "Decoder ERROR unsupported codec.\n");
+		res.codec = avcodec_find_decoder(codec_params->codec_id);
+		failif (NULL == res.codec, "Decoder ERROR unsupported codec.\n");
 
-		if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-			audio_stream_index = i;
-			// av_dump_format(pFormatContext, i, args.file, 0);
-			pCodec = pLocalCodec;
-			pCodecParameters = pLocalCodecParameters;
-			break;
-		}
+		res.codec_params = codec_params;
+		res.audio_stream = i;
+		break;
 	}
+	failif (res.audio_stream < 0, "Decoder ERROR file %s does not contain an audio stream.\n", path);
 
-	failif (audio_stream_index < 0, "Decoder ERROR file %s does not contain an audio stream.\n", args.file);
+	*result = res;
+	return 0;
 
-	AVCodecContext *pCodecContext = avcodec_alloc_context3(pCodec);
-	failif (NULL == pCodecContext, "Decoder ERROR failed to allocated memory for AVCodecContext\n");
+CLOSE_FILE:
+	avformat_close_input(&format_ctx);
+FREE_FORMAT:
+	avformat_free_context(format_ctx);
+END:
+	return -1;
+#undef FAIL
+}
+
+void decoder_free(DecoderContext* ctx) {
+	avformat_close_input(&ctx->format_ctx);
+	avformat_free_context(ctx->format_ctx);
+}
+
+void* decode(void* _args) {
+#define FAIL END
+	DecoderContext args = *(DecoderContext*)_args;
+
+	// setup codec
+	AVCodecContext *codec_ctx = avcodec_alloc_context3(args.codec);
+	failif (NULL == codec_ctx, "Decoder ERROR failed to allocated memory for AVCodecContext\n");
 #undef FAIL
 #define FAIL FREE_CODEC
 
-	failif (0 < avcodec_parameters_to_context(pCodecContext, pCodecParameters),
+	failif (0 < avcodec_parameters_to_context(codec_ctx, args.codec_params),
 		"Decoder ERROR failed to copy codec params to codec context\n");
-	failif (0 < avcodec_open2(pCodecContext, pCodec, NULL),
+	failif (0 < avcodec_open2(codec_ctx, args.codec, NULL),
 		"Decoder ERROR failed to open codec through avcodec_open2\n");
 
-	AVFrame *pFrame = av_frame_alloc();
-	failif (NULL == pFrame, "Decoder ERROR failed to allocate memory for AVFrame\n");
+	AVFrame *frame = av_frame_alloc();
+	failif (NULL == frame, "Decoder ERROR failed to allocate memory for AVFrame\n");
 #undef FAIL
 #define FAIL FREE_FRAME
 
-	AVPacket *pPacket = av_packet_alloc();
-	failif (NULL == pPacket, "Decoder ERROR failed to allocate memory for AVPacket\n");
+	AVPacket *packet = av_packet_alloc();
+	failif (NULL == packet, "Decoder ERROR failed to allocate memory for AVPacket\n");
 #undef FAIL
 #define FAIL FREE_PACKET
 
+	// setup resampler
 	struct SwrContext* swr_ctx = swr_alloc();
 	failif (!swr_ctx, "Decoder ERROR Could not allocate resampler context\n");
 #undef FAIL
 #define FAIL FREE_RESAMPLER
 
-	av_opt_set_int(swr_ctx, "in_channel_layout", pCodecParameters->channel_layout, 0);
-	av_opt_set_int(swr_ctx, "in_sample_rate", pCodecParameters->sample_rate, 0);
-	av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", pCodecParameters->format, 0);
+	av_opt_set_int(swr_ctx, "in_channel_layout", args.codec_params->channel_layout, 0);
+	av_opt_set_int(swr_ctx, "in_sample_rate", args.codec_params->sample_rate, 0);
+	av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", args.codec_params->format, 0);
 
-	// TODO: pass parameters to player
 	av_opt_set_int(swr_ctx, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
-	av_opt_set_int(swr_ctx, "out_sample_rate", SAMPLE_RATE, 0);
+	av_opt_set_int(swr_ctx, "out_sample_rate", args.codec_params->sample_rate, 0);
 	av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
 
 	failif (0 > swr_init(swr_ctx), "Failed to initialize the resampling context\n");
 
-	int dst_nb_samples = av_rescale_rnd(1024, SAMPLE_RATE, pCodecParameters->sample_rate, AV_ROUND_UP);
+	// alloc resampling buffer
+	int dst_nb_samples = av_rescale_rnd(1024, args.codec_params->sample_rate, args.codec_params->sample_rate, AV_ROUND_UP);
 	int max_dst_nb_samples = dst_nb_samples;
 	int dst_nb_channels = av_get_channel_layout_nb_channels(AV_CH_LAYOUT_STEREO);
 
@@ -101,17 +117,18 @@ void* decode(void* _args) {
 #undef FAIL
 #define FAIL FREE_DEST
 
-	while (0 <= av_read_frame(pFormatContext, pPacket)) {
-		if (pPacket->stream_index != audio_stream_index) goto NEXT_PACKET;
+	// decode
+	while (0 <= av_read_frame(args.format_ctx, packet)) {
+		if (packet->stream_index != args.audio_stream) goto NEXT_PACKET;
 
-		int status = avcodec_send_packet(pCodecContext, pPacket);
+		int status = avcodec_send_packet(codec_ctx, packet);
 		if (status < 0) {
 			fprintf(stderr, "Error while sending a packet to the decoder: %s\n", av_err2str(status));
 			goto NEXT_PACKET;
 		}
 
 		for (;;) {
-			int status = avcodec_receive_frame(pCodecContext, pFrame);
+			int status = avcodec_receive_frame(codec_ctx, frame);
 			if (status == AVERROR(EAGAIN) || status == AVERROR_EOF) {
 				break;
 			} else if (status < 0) {
@@ -119,9 +136,9 @@ void* decode(void* _args) {
 				goto NEXT_PACKET;
 			}
 
-			/* compute destination number of samples */
-			dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, pCodecParameters->sample_rate) +
-					pFrame->nb_samples, SAMPLE_RATE, pCodecParameters->sample_rate, AV_ROUND_UP);
+			// realloc resampling buffer, if needed
+			dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, args.codec_params->sample_rate) +
+					frame->nb_samples, args.codec_params->sample_rate, args.codec_params->sample_rate, AV_ROUND_UP);
 			if (dst_nb_samples > max_dst_nb_samples) {
 				av_free(dst_data[0]);
 				status = av_samples_alloc(dst_data, &dst_linesize, dst_nb_channels,
@@ -131,36 +148,32 @@ void* decode(void* _args) {
 				max_dst_nb_samples = dst_nb_samples;
 			}
 
-			// convert to destination format
-			int samples_per_ch = swr_convert(swr_ctx, dst_data, dst_nb_samples, (const uint8_t **)pFrame->data, pFrame->nb_samples);
+			// resample
+			int samples_per_ch = swr_convert(swr_ctx, dst_data, dst_nb_samples, (const uint8_t **)frame->data, frame->nb_samples);
 			failif (status < 0, "Error while converting\n");
-			int dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
-				samples_per_ch, AV_SAMPLE_FMT_S16, 1);
+			av_samples_get_buffer_size(&dst_linesize, dst_nb_channels, samples_per_ch, AV_SAMPLE_FMT_S16, 1);
 
+			// play
 			channel_write(args.output, dst_data[0], dst_linesize);
 		}
 
 NEXT_PACKET:
-		av_packet_unref(pPacket);
+		av_packet_unref(packet);
 	}
 
+	// cleanup
 FREE_DEST:
 	if (dst_data) av_freep(dst_data[0]);
 	av_freep(dst_data);
 FREE_RESAMPLER:
 	swr_free(&swr_ctx);
 FREE_PACKET:
-	av_packet_free(&pPacket);
+	av_packet_free(&packet);
 FREE_FRAME:
-	av_frame_free(&pFrame);
+	av_frame_free(&frame);
 FREE_CODEC:
-	avcodec_free_context(&pCodecContext);
-CLOSE_FILE:
-	avformat_close_input(&pFormatContext);
-FREE_FORMAT:
-	avformat_free_context(pFormatContext);
+	avcodec_free_context(&codec_ctx);
 END:
-	channel_finish_writing(args.output);
 	pthread_exit(NULL);
 #undef FAIL
 }

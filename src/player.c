@@ -22,7 +22,7 @@ void* player_play(void* _args) {
 	memset(&format, 0, sizeof(format));
 	format.bits = 16;
 	format.channels = 2;
-	format.rate = 44100;
+	format.rate = args->rate;
 	format.byte_format = AO_FMT_NATIVE;
 
 	ao_device* device = ao_open_live(default_driver, &format, NULL);
