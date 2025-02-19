@@ -37,3 +37,6 @@ void channel_finish_writing(Channel* channel);
 int channel_read(ChannelConsumer* consumer, int count, void* dest);
 int channel_available(ChannelConsumer* consumer);
 
+/// thread safety: what is that?
+void channel_reset(Channel* channel);
+

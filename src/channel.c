@@ -180,3 +180,23 @@ int channel_available(ChannelConsumer* consumer) {
 	return ring_available(channel->producer_cursor, consumer->cursor, channel->capacity);
 }
 
+void channel_reset(Channel* channel) {
+	pthread_mutex_lock(&channel->prod_mutex);
+	pthread_mutex_lock(&channel->cons_mutex);
+
+	channel->finished = false;
+
+	channel->producer_cursor = 0;
+	for (int i = 0; i < channel->consumer_count; i++) {
+		channel->consumers[channel->consumer_count].cursor = 0;
+	}
+
+	memset(channel->data, 0, channel->capacity);
+
+	pthread_cond_signal(&channel->producer_cond);
+	pthread_cond_signal(&channel->producer_signal);
+
+	pthread_mutex_unlock(&channel->cons_mutex);
+	pthread_mutex_unlock(&channel->prod_mutex);
+}
+

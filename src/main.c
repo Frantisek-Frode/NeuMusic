@@ -101,11 +101,11 @@ int main(int argc, const char** argv) {
 	bool mpris = 0 <= mpris_init(&mpris_ctx);
 	mpris_ctx.event_channel = event_channel;
 	ChannelConsumer* events = &event_channel->consumers[EC_MAIN];
+	Channel* audio_channel = channel_alloc(44100, 1);
+
 
 	bool stop = false;
 	while (!stop) {
-		Channel* audio_channel = channel_alloc(44100, 1);
-
 		// setup decoder
 		pthread_t dec_thread;
 		DecoderContext dec_args;
@@ -159,10 +159,12 @@ BREAK_PLAYBACK:
 		decoder_free(&dec_args);
 		channel_finish_writing(audio_channel);
 		pthread_join(play_thread, NULL);
-	channel_free(audio_channel);
+
+		channel_reset(audio_channel);
 	} // end playback loop
 
 FAIL:
+	channel_free(audio_channel);
 
 	if (mpris) {
 		mpris_free(&mpris_ctx);
