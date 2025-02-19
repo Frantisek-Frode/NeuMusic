@@ -1,4 +1,5 @@
 #include "decoder.h"
+#include "comain.h"
 #include "channel.h"
 #include "mpris.h"
 #include <libavutil/channel_layout.h>
@@ -11,8 +12,6 @@
 #include <libswresample/swresample.h>
 #include <libavutil/opt.h>
 
-
-#define failif(cond, ...) if (cond) { fprintf(stderr, __VA_ARGS__); goto FAIL; }
 
 int decoder_init(const char* path, DecoderContext* result) {
 #define FAIL END

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+// @linux
 #define BUS_NAME "org.mpris.MediaPlayer2.asdfgh"
 #define OBJECT_PATH "/org/mpris/MediaPlayer2"
 #define INTERFACE_NAME "org.mpris.MediaPlayer2"
