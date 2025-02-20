@@ -4,9 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 // @linux
-#define BUS_NAME "org.mpris.MediaPlayer2.asdfgh"
+#define BUS_NAME "org.mpris.MediaPlayer2.fmusic"
 #define OBJECT_PATH "/org/mpris/MediaPlayer2"
 #define INTERFACE_NAME "org.mpris.MediaPlayer2"
 #define PLAYER_NAME "org.mpris.MediaPlayer2.Player"
@@ -35,8 +36,12 @@ int mpris_init(MprisContext* ctx) {
 		return -1;
 	}
 
+	pid_t pid = getpid();
+	char bus_name[10 + sizeof(BUS_NAME)];
+	snprintf(bus_name, sizeof(bus_name), BUS_NAME"%d", pid);
+
 	// Request a well-known name
-	dbus_bus_request_name(conn, BUS_NAME, DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
+	dbus_bus_request_name(conn, bus_name, DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
 	if (dbus_error_is_set(&err)) {
 		fprintf(stderr, "Failed to request name: %s\n", err.message);
 		dbus_error_free(&err);

@@ -148,7 +148,11 @@ int main(int argc, const char** argv) {
 					if (res == 1) {
 						play_args.volume = volume = vol / 100;
 					} else if (0==strncmp(buffer, "dbus", 4)) {
-						mpris_remind(&mpris_ctx);
+						if (mpris) {
+							mpris_free(&mpris_ctx);
+						}
+						bool mpris = 0 <= mpris_init(&mpris_ctx);
+						mpris_ctx.event_channel = event_channel;
 					}
 				}
 
