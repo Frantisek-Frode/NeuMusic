@@ -141,7 +141,7 @@ void* decode(void* _args) {
 			dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, args.codec_params->sample_rate) +
 					frame->nb_samples, args.codec_params->sample_rate, args.codec_params->sample_rate, AV_ROUND_UP);
 			if (dst_nb_samples > max_dst_nb_samples) {
-				av_free(dst_data[0]);
+				av_freep(&dst_data[0]);
 				status = av_samples_alloc(dst_data, &dst_linesize, dst_nb_channels,
 						dst_nb_samples, AV_SAMPLE_FMT_S16, 0);
 				failif (status < 0, "Could not reallocate destination samples\n");
@@ -179,9 +179,9 @@ NEXT_PACKET:
 
 	channel_finish_writing(args.output);
 	// cleanup
-	if (dst_data) av_freep(dst_data[0]);
+	if (dst_data) av_freep(&dst_data[0]);
 FREE_DEST:
-	av_freep(dst_data);
+	av_freep(&dst_data);
 FREE_RESAMPLER:
 	swr_free(&swr_ctx);
 FREE_PACKET:
