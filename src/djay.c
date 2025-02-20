@@ -122,6 +122,7 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 
 	int hist_len = 10;
 	int* history = malloc(hist_len * sizeof(*history));
+	failif(NULL == history, "Playlist malloc 4 failed\n");
 	for (int i = 0; i < hist_len; i++) {
 		int r = random() % count;
 		history[i] = r;

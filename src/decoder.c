@@ -177,6 +177,7 @@ NEXT_PACKET:
 		av_packet_unref(packet);
 	}
 
+	channel_finish_writing(args.output);
 	// cleanup
 	if (dst_data) av_freep(dst_data[0]);
 FREE_DEST:

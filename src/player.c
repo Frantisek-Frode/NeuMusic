@@ -6,18 +6,18 @@
 #include <stdint.h>
 #include "mpris.h"
 #include <stdbool.h>
+#include <math.h>
 
 
 typedef struct {
-	uint16_t left;
-	uint16_t right;
+	int16_t left;
+	int16_t right;
 } Sample;
 #define BUFF_SIZE 500
 
 void* player_play(void* _args) {
 	PlayerArgs* args = _args;
 
-	ao_initialize();
 	int default_driver = ao_default_driver_id();
 
 	ao_sample_format format;
@@ -40,8 +40,12 @@ void* player_play(void* _args) {
 	for (;;) {
 		int read = channel_read(args->data, buff_size, buffer);
 		if (!read) break;
+		for (int i = 0; i < read / sizeof(Sample); i++) {
+			buffer[i].left *= exp(args->volume - 1);
+			buffer[i].right *= exp(args->volume - 1);
+		}
 
-		ao_play(device, (char*)buffer, buff_size);
+		ao_play(device, (char*)buffer, read);
 
 		// check events
 		while (paused || (sizeof(PlayerAction) <= channel_available(args->events))) {
@@ -73,7 +77,6 @@ void* player_play(void* _args) {
 
 STOP:
 	ao_close(device);
-	ao_shutdown();
 
 	free(buffer);
 

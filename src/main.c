@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <ao/ao.h>
 
 const char* cpl_flag = "--create-playlist";
 #define usage_play "%s PLAYLIST\n", exe_name
@@ -103,6 +105,8 @@ int main(int argc, const char** argv) {
 	ChannelConsumer* events = &event_channel->consumers[EC_MAIN];
 	Channel* audio_channel = channel_alloc(44100, 1);
 
+	double volume = -1;
+	ao_initialize();
 
 	bool stop = false;
 	while (!stop) {
@@ -123,15 +127,37 @@ int main(int argc, const char** argv) {
 			.data = &audio_channel->consumers[0],
 			.rate = dec_args.codec_params->sample_rate,
 			.events = &event_channel->consumers[EC_PLAY],
+			.volume = volume,
 		};
 		pthread_create(&play_thread, NULL, player_play, &play_args);
 
 		// ui loop
-		for (;;) {
+		while (!audio_channel->finished) {
+			{
+				char buffer[1024];
+				int sin = fileno(stdin);
+				int sio_flags = fcntl(sin, F_GETFL);
+				fcntl(sin, F_SETFL, sio_flags | O_NONBLOCK);
+
+				int size = fread(buffer, 1, sizeof(buffer) - 1, stdin);
+				if (size > 0) {
+					buffer[size - 1] = 0;
+
+					double vol;
+					int res = sscanf(buffer, "vol %lf", &vol);
+					if (res == 1) {
+						play_args.volume = volume = vol / 100;
+					} else if (0==strncmp(buffer, "dbus", 4)) {
+						mpris_remind(&mpris_ctx);
+					}
+				}
+
+				fcntl(sin, F_SETFL, sio_flags);
+			}
+
 			if (mpris) {
 				mpris_check(&mpris_ctx);
 			}
-			usleep(10000);
 
 			// handle events
 			while (sizeof(PlayerAction) <= channel_available(events)) {
@@ -151,19 +177,22 @@ int main(int argc, const char** argv) {
 				default: break;
 				}
 			}
+
+			usleep(10000);
 		} // end ui loop
 
+		djay_next(&djay_ctx);
 BREAK_PLAYBACK:
 		// cleanup
 		pthread_join(dec_thread, NULL);
 		decoder_free(&dec_args);
-		channel_finish_writing(audio_channel);
 		pthread_join(play_thread, NULL);
 
 		channel_reset(audio_channel);
 	} // end playback loop
 
 FAIL:
+	ao_shutdown();
 	channel_free(audio_channel);
 
 	if (mpris) {
