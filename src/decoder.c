@@ -165,8 +165,7 @@ void* decode(void* _args) {
 				case ACTION_STOP:
 				case ACTION_NEXT:
 				case ACTION_PREV:
-					// TODO: rename macro?
-					goto FAIL;
+					goto STOP;
 				default: break;
 				}
 			}
@@ -176,6 +175,7 @@ NEXT_PACKET:
 		av_packet_unref(packet);
 	}
 
+STOP:
 	channel_finish_writing(args.output);
 	// cleanup
 	if (dst_data) av_freep(&dst_data[0]);

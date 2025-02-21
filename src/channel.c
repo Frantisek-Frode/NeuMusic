@@ -188,7 +188,7 @@ void channel_reset(Channel* channel) {
 
 	channel->producer_cursor = 0;
 	for (int i = 0; i < channel->consumer_count; i++) {
-		channel->consumers[channel->consumer_count].cursor = 0;
+		channel->consumers[i].cursor = 0;
 	}
 
 	memset(channel->data, 0, channel->capacity);

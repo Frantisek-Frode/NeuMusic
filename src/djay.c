@@ -71,7 +71,7 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 	failif (length - 1 != fread(buffer, 1, length - 1, file), "Playlist read failed\n");
 
 	int count = 1;
-	for (int i = 0; i < length; i++) {
+	for (int i = 0; i < length - 1; i++) {
 		if (buffer[i] == '\n') count++;
 	}
 	// failif (0 == count, "Empty or invalid playlist\n");
