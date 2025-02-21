@@ -1,5 +1,6 @@
 #include "mpris.h"
 #include "channel.h"
+#include "comain.h"
 #include <dbus/dbus.h>
 #include <stdio.h>
 #include <stdlib.h>

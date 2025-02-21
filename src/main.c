@@ -1,14 +1,12 @@
 #include "channel.h"
+#include "comain.h"
 #include "decoder.h"
 #include "djay.h"
+#include "input.h"
 #include "mpris.h"
 #include "player.h"
 #include <pthread.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <ao/ao.h>
 
 const char* cpl_flag = "--create-playlist";
@@ -127,41 +125,14 @@ int main(int argc, const char** argv) {
 			.data = &audio_channel->consumers[0],
 			.rate = dec_args.codec_params->sample_rate,
 			.events = &event_channel->consumers[EC_PLAY],
-			.volume = volume,
+			.volume = &volume,
 		};
 		pthread_create(&play_thread, NULL, player_play, &play_args);
 
 		// ui loop
 		while (!audio_channel->finished) {
-			{
-				char buffer[1024];
-				int sin = fileno(stdin);
-				int sio_flags = fcntl(sin, F_GETFL);
-				fcntl(sin, F_SETFL, sio_flags | O_NONBLOCK);
-
-				int size = fread(buffer, 1, sizeof(buffer) - 1, stdin);
-				if (size > 0) {
-					buffer[size - 1] = 0;
-
-					double vol;
-					int res = sscanf(buffer, "vol %lf", &vol);
-					if (res == 1) {
-						play_args.volume = volume = vol / 100;
-					} else if (0==strncmp(buffer, "dbus", 4)) {
-						if (mpris) {
-							mpris_free(&mpris_ctx);
-						}
-						bool mpris = 0 <= mpris_init(&mpris_ctx);
-						mpris_ctx.event_channel = event_channel;
-					}
-				}
-
-				fcntl(sin, F_SETFL, sio_flags);
-			}
-
-			if (mpris) {
-				mpris_check(&mpris_ctx);
-			}
+			input_stdin(event_channel, &volume);
+			if (mpris) mpris_check(&mpris_ctx);
 
 			// handle events
 			while (sizeof(PlayerAction) <= channel_available(events)) {

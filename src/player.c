@@ -1,10 +1,10 @@
 #include "player.h"
+#include "comain.h"
 #include "channel.h"
 #include <pthread.h>
 #include <ao/ao.h>
 #include <string.h>
 #include <stdint.h>
-#include "mpris.h"
 #include <stdbool.h>
 #include <math.h>
 
@@ -40,9 +40,10 @@ void* player_play(void* _args) {
 	for (;;) {
 		int read = channel_read(args->data, buff_size, buffer);
 		if (!read) break;
+		double volume = *args->volume;
 		for (int i = 0; i < read / sizeof(Sample); i++) {
-			buffer[i].left *= exp(args->volume - 1);
-			buffer[i].right *= exp(args->volume - 1);
+			buffer[i].left *= exp(volume - 1);
+			buffer[i].right *= exp(volume - 1);
 		}
 
 		ao_play(device, (char*)buffer, read);

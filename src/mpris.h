@@ -2,17 +2,6 @@
 #include "channel.h"
 #include <dbus/dbus.h>
 
-typedef enum {
-	ACTION_NEXT,
-	ACTION_PREV,
-	ACTION_PAUSE,
-	ACTION_PLAYPAUSE,
-	ACTION_STOP,
-	ACTION_PLAY,
-
-	ACTION_COUNT,
-} PlayerAction;
-
 typedef struct {
 	/// checking for mpris events happens on main thread
 	/// so we can share channel with main event channel

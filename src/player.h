@@ -5,7 +5,7 @@ typedef struct {
 	ChannelConsumer* data;
 	int rate;
 	ChannelConsumer* events;
-	double volume;
+	double* volume;
 } PlayerArgs;
 
 void* player_play(void* args);

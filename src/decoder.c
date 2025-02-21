@@ -1,7 +1,6 @@
 #include "decoder.h"
 #include "comain.h"
 #include "channel.h"
-#include "mpris.h"
 #include <libavutil/channel_layout.h>
 #include <pthread.h>
 #include <math.h>
