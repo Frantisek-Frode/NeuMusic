@@ -73,6 +73,7 @@ void* decode(void* _args) {
 
 	failif (0 < avcodec_parameters_to_context(codec_ctx, args.codec_params),
 		"Decoder ERROR failed to copy codec params to codec context\n");
+	codec_ctx->pkt_timebase = args.format_ctx->streams[args.audio_stream]->time_base;
 	failif (0 < avcodec_open2(codec_ctx, args.codec, NULL),
 		"Decoder ERROR failed to open codec through avcodec_open2\n");
 
