@@ -5,6 +5,7 @@
 #include "input.h"
 #include "mpris.h"
 #include "player.h"
+#include "tui.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <ao/ao.h>
@@ -103,15 +104,26 @@ int main(int argc, const char** argv) {
 	ChannelConsumer* events = &event_channel->consumers[EC_MAIN];
 	Channel* audio_channel = channel_alloc(44100, 1);
 
+	bool paused = false;
 	double volume = -1;
 	ao_initialize();
+
+	TuiData tui_data = {
+		.volume = &volume,
+		.pasused = &paused,
+		.current_track = "",
+		.prev_track = "",
+	};
+
+	tui_init();
 
 	bool stop = false;
 	while (!stop) {
 		// setup decoder
 		pthread_t dec_thread;
 		DecoderContext dec_args;
-		printf("Playing: %s\n", djay_ctx.current_path);
+		// printf("Playing: %s\n", djay_ctx.current_path);
+		tui_data.current_track = djay_ctx.current_path;
 		if (0 > decoder_init(djay_ctx.current_path, &dec_args)) {
 			goto FAIL;
 		}
@@ -126,6 +138,7 @@ int main(int argc, const char** argv) {
 			.rate = dec_args.codec_params->sample_rate,
 			.events = &event_channel->consumers[EC_PLAY],
 			.volume = &volume,
+			.paused = &paused,
 		};
 		pthread_create(&play_thread, NULL, player_play, &play_args);
 
@@ -141,9 +154,12 @@ int main(int argc, const char** argv) {
 
 				switch (action) {
 				case ACTION_NEXT:
+					// tui_data.prev_track = tui_data.current_track;
 					djay_next(&djay_ctx);
 					goto BREAK_PLAYBACK;
 				case ACTION_PREV:
+					// we would have to either remember or reparse metadata
+					tui_data.prev_track = "...";
 					djay_prev(&djay_ctx);
 					goto BREAK_PLAYBACK;
 				case ACTION_STOP:
@@ -153,9 +169,12 @@ int main(int argc, const char** argv) {
 				}
 			}
 
+			tui_draw(&tui_data);
+
 			usleep(10000);
 		} // end ui loop
 
+		// tui_data.prev_track = tui_data.current_track;
 		djay_next(&djay_ctx);
 BREAK_PLAYBACK:
 		// cleanup
@@ -175,6 +194,8 @@ FAIL:
 	}
 	channel_free(event_channel);
 	djay_free(&djay_ctx);
+
+	tui_stop();
 
 	return 0;
 }

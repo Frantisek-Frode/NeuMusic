@@ -17,6 +17,7 @@ typedef struct {
 
 void* player_play(void* _args) {
 	PlayerArgs* args = _args;
+	*args->paused = false;
 
 	int default_driver = ao_default_driver_id();
 
@@ -36,7 +37,6 @@ void* player_play(void* _args) {
 	int buff_size = BUFF_SIZE * sizeof(Sample);
 	Sample* buffer = calloc(BUFF_SIZE, sizeof(Sample));
 
-	bool paused = false;
 	for (;;) {
 		int read = channel_read(args->data, buff_size, buffer);
 		if (!read) break;
@@ -49,19 +49,19 @@ void* player_play(void* _args) {
 		ao_play(device, (char*)buffer, read);
 
 		// check events
-		while (paused || (sizeof(PlayerAction) <= channel_available(args->events))) {
+		while (*args->paused || (sizeof(PlayerAction) <= channel_available(args->events))) {
 			PlayerAction action;
 			channel_read(args->events, sizeof(PlayerAction), &action);
 
 			switch (action) {
 			case ACTION_PLAY:
-				paused = false;
+				*args->paused = false;
 				break;
 			case ACTION_PAUSE:
-				paused = true;
+				*args->paused = true;
 				break;
 			case ACTION_PLAYPAUSE:
-				paused = !paused;
+				*args->paused = !*args->paused;
 				break;
 			case ACTION_STOP:
 			case ACTION_NEXT:

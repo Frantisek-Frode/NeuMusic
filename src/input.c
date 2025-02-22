@@ -1,6 +1,7 @@
 #include "input.h"
 #include "comain.h"
 #include "channel.h"
+#include "tui.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +25,8 @@ void input_stdin(Channel* event_channel, double* volume)
 
 	int size = fread(buffer, 1, sizeof(buffer) - 1, stdin);
 	if (size <= 0) goto END;
+
+	tui_backprompt();
 
 	buffer[size - 1] = 0;
 
