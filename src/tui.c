@@ -10,6 +10,7 @@
 
 #define A_LGREEN "\e[92m"
 #define A_GREEN "\e[32m"
+#define A_CYAN "\e[36m"
 #define A_YELL "\e[33m"
 #define A_BOLD "\e[1m"
 #define A_RESET "\e[0m"
@@ -46,6 +47,40 @@ void tui_stop() {
 	printf("\e[0G\e[=7h");
 }
 
+
+typedef struct {
+	char* buffer;
+	int buff_size;
+	int cursor;
+
+	int max_width;
+	int width;
+} StringBuilder;
+
+void push_string(StringBuilder* b, const char* str) {
+	if (str == NULL) str = "(unkown)";
+
+	int len = strlen(str);
+	if (b->cursor + len >= b->buff_size) len = b->buff_size - b->cursor;
+	if (b->width + len >= b->max_width) len = b->max_width - b->width;
+	if (len <= 0) return;
+
+	memcpy(b->buffer + b->cursor, str, len);
+	b->cursor += len;
+	b->width += len;
+}
+
+void push_control(StringBuilder* b, const char* ctrl) {
+	int len = strlen(ctrl);
+	if (b->cursor + len >= b->buff_size) len = b->buff_size - b->cursor;
+
+	if (len <= 0) return;
+
+	memcpy(b->buffer + b->cursor, ctrl, len);
+	b->cursor += len;
+}
+
+
 void tui_draw(TuiData* data) {
 	if (!tty) return;
 	printf("\e7"); // save cursor
@@ -58,32 +93,46 @@ void tui_draw(TuiData* data) {
 
 	struct winsize w;
 	ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-	int line_width = w.ws_col;
-	char* line_buffer = malloc(line_width);
-	if (line_buffer == NULL) {
-		fprintf(stderr, "OOM\n");
-		exit(-1);
-	}
+	char line_buffer[500];
+	StringBuilder b = {
+		.buffer = line_buffer,
+		.buff_size = sizeof(line_buffer),
+		.max_width = w.ws_col - 4,
+		.cursor = 0,
+		.width = 0,
+	};
 
 	printf("\e[2G\e[2K");
-	snprintf(line_buffer, line_width,
-		"Previously \t"A_LGREEN"%s"A_RESET" by "A_LGREEN"%s",
-		data->prev_meta.title, data->prev_meta.author);
-	memcpy(line_buffer + line_width - 5, "...", 4);
-	printf("%s\n"A_RESET, line_buffer);
+	push_string(&b, "Previously    ");
+	push_control(&b, A_LGREEN);
+	push_string(&b, data->prev_meta.title);
+	push_control(&b, A_RESET);
+	push_string(&b, " by ");
+	push_control(&b, A_LGREEN);
+	push_string(&b, data->prev_meta.author);
+	push_control(&b, A_RESET);
+	if (b.width == b.max_width) push_control(&b, A_CYAN"..."A_RESET);
+	b.buffer[b.cursor] = 0;
+	printf("%s\n", b.buffer);
+	b.cursor = b.width = 0;
 
 	printf("\e[2G\e[2K");
-	snprintf(line_buffer, line_width,
-		"Now playing\t"A_BOLD""A_GREEN"%s"A_RESET" by "A_BOLD""A_GREEN"%s",
-		data->cur_meta.title, data->cur_meta.author);
-	memcpy(line_buffer + line_width - 5, "...", 4);
-	printf("%s\n"A_RESET, line_buffer);
-
-	free(line_buffer);
+	push_string(&b, "Now playing   ");
+	push_control(&b, A_GREEN);
+	push_string(&b, data->cur_meta.title);
+	push_control(&b, A_RESET);
+	push_string(&b, " by ");
+	push_control(&b, A_GREEN);
+	push_string(&b, data->cur_meta.author);
+	push_control(&b, A_RESET);
+	if (b.width == b.max_width) push_control(&b, A_CYAN"..."A_RESET);
+	b.buffer[b.cursor] = 0;
+	printf("%s\n", b.buffer);
+	b.cursor = b.width = 0;
 
 	printf("\e[2G"); // start of line
 	printf("\e[2K"); // clear line
-	printf("Volume     \t"A_BOLD""A_GREEN"% 4d"A_RESET, (int)(*data->volume * 100));
+	printf("Volume        "A_BOLD""A_GREEN"% 4d"A_RESET, (int)(*data->volume * 100));
 
 	printf("\e8"); // restore cursor
 

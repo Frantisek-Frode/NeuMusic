@@ -177,7 +177,7 @@ int main(int argc, const char** argv) {
 
 			tui_draw(&tui_data);
 
-			usleep(10000);
+			usleep(50000);
 		} // end ui loop
 
 		free_meta(&tui_data.prev_meta);
