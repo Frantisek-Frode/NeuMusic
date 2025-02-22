@@ -1,12 +1,14 @@
 #pragma once
+#include "comain.h"
 #include <stdbool.h>
 
 typedef struct {
 	double* volume;
-	const char* current_track;
-	const char* prev_track;
 	bool* pasused;
 	double* progress;
+
+	Metadata cur_meta;
+	Metadata prev_meta;
 } TuiData;
 
 void tui_prompt();

@@ -108,11 +108,16 @@ int main(int argc, const char** argv) {
 	double volume = -1;
 	ao_initialize();
 
+	Metadata empty_meta = {
+		.author = NULL,
+		.title = NULL,
+	};
+
 	TuiData tui_data = {
 		.volume = &volume,
 		.pasused = &paused,
-		.current_track = "",
-		.prev_track = "",
+		.cur_meta = empty_meta,
+		.prev_meta = empty_meta,
 	};
 
 	tui_init();
@@ -122,14 +127,13 @@ int main(int argc, const char** argv) {
 		// setup decoder
 		pthread_t dec_thread;
 		DecoderContext dec_args;
-		// printf("Playing: %s\n", djay_ctx.current_path);
-		tui_data.current_track = djay_ctx.current_path;
 		if (0 > decoder_init(djay_ctx.current_path, &dec_args)) {
 			goto FAIL;
 		}
 		dec_args.output = audio_channel;
 		dec_args.events = &event_channel->consumers[EC_DEC];
 		pthread_create(&dec_thread, NULL, decode, &dec_args);
+		tui_data.cur_meta = dec_args.metadata;
 
 		// setup player
 		pthread_t play_thread;
@@ -155,11 +159,13 @@ int main(int argc, const char** argv) {
 				switch (action) {
 				case ACTION_NEXT:
 					// tui_data.prev_track = tui_data.current_track;
+					free_meta(&tui_data.prev_meta);
+					tui_data.prev_meta = tui_data.cur_meta;
 					djay_next(&djay_ctx);
 					goto BREAK_PLAYBACK;
 				case ACTION_PREV:
 					// we would have to either remember or reparse metadata
-					tui_data.prev_track = "...";
+					tui_data.prev_meta = empty_meta;
 					djay_prev(&djay_ctx);
 					goto BREAK_PLAYBACK;
 				case ACTION_STOP:
@@ -174,7 +180,8 @@ int main(int argc, const char** argv) {
 			usleep(10000);
 		} // end ui loop
 
-		// tui_data.prev_track = tui_data.current_track;
+		free_meta(&tui_data.prev_meta);
+		tui_data.prev_meta = tui_data.cur_meta;
 		djay_next(&djay_ctx);
 BREAK_PLAYBACK:
 		// cleanup
@@ -196,6 +203,8 @@ FAIL:
 	djay_free(&djay_ctx);
 
 	tui_stop();
+	free_meta(&tui_data.prev_meta);
+	free_meta(&tui_data.cur_meta);
 
 	return 0;
 }

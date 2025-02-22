@@ -1,5 +1,6 @@
 #pragma once
 #include "channel.h"
+#include "comain.h"
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 
@@ -10,6 +11,8 @@ typedef struct {
 	AVCodecParameters* codec_params;
 	AVCodec* codec;
 	int audio_stream;
+
+	Metadata metadata;
 } DecoderContext;
 
 

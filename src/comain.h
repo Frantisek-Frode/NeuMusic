@@ -1,4 +1,6 @@
 #pragma once
+#include <stdlib.h>
+
 #define failif(cond, ...) if (cond) { fprintf(stderr, __VA_ARGS__); goto FAIL; }
 
 typedef enum {
@@ -11,4 +13,11 @@ typedef enum {
 
 	ACTION_COUNT,
 } PlayerAction;
+
+typedef struct {
+	const char* author;
+	const char* title;
+} Metadata;
+
+void free_meta(Metadata* meta);
 

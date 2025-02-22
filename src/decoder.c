@@ -2,14 +2,26 @@
 #include "comain.h"
 #include "channel.h"
 #include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
 #include <pthread.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswresample/swresample.h>
 #include <libavutil/opt.h>
+
+char* string_copy(const char* str) {
+	unsigned long len = strlen(str);
+	char* res = malloc(len + 1);
+	if (res == NULL) return NULL;
+
+	memcpy(res, str, len + 1);
+
+	return res;
+}
 
 
 int decoder_init(const char* path, DecoderContext* result) {
@@ -43,6 +55,27 @@ int decoder_init(const char* path, DecoderContext* result) {
 		break;
 	}
 	failif (res.audio_stream < 0, "Decoder ERROR file %s does not contain an audio stream.\n", path);
+
+	AVDictionaryEntry* author_tag = NULL;
+	AVDictionaryEntry* title_tag = NULL;
+
+	AVDictionary* meta_dict = format_ctx->metadata;
+	if (NULL == meta_dict) meta_dict = format_ctx->streams[res.audio_stream]->metadata;
+
+	Metadata metadata = {
+		.title = NULL,
+		.author = NULL,
+	};
+	if ((author_tag = av_dict_get(meta_dict, "artist", author_tag, AV_DICT_IGNORE_SUFFIX))) {
+		metadata.author = string_copy(author_tag->value);
+	}
+	if ((title_tag = av_dict_get(meta_dict, "title", title_tag, AV_DICT_IGNORE_SUFFIX))) {
+		metadata.title = string_copy(title_tag->value);
+	}
+	res.metadata = metadata;
+
+	if (metadata.title == NULL) {
+	}
 
 	*result = res;
 	return 0;
