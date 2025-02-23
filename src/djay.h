@@ -1,10 +1,12 @@
 #pragma once
+#include "neunet.h"
+
 #define _Nullable
 
 #define CHAR_COUNT 5
 typedef struct {
 	float confidence;
-	float characteristics[CHAR_COUNT];
+	Float characteristics[CHAR_COUNT];
 
 	int index;
 	const char* path;
@@ -20,7 +22,8 @@ typedef struct {
 		DJEntry* entries;
 	} playlist;
 
-	float mood[MOOD_COUNT];
+	Float mood_conf;
+	Float mood[MOOD_COUNT];
 
 	int base_path_len;
 	char* current_path;
@@ -31,6 +34,8 @@ typedef struct {
 		int last;
 		int* entries;
 	} history;
+
+	NeuNet neu;
 } DJayContext;
 
 /// @returns path of the new playlist file or NULL if it fails.
@@ -41,4 +46,7 @@ int djay_init(const char* playlist_file, DJayContext* ctx);
 void djay_free(DJayContext* ctx);
 void djay_next(DJayContext* ctx);
 void djay_prev(DJayContext* ctx);
+
+/// accepts rating in range (-1., 1.)
+void djay_rate(DJayContext* ctx, Float rating);
 

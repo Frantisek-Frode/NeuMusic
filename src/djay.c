@@ -1,10 +1,11 @@
 #include "djay.h"
+#include "comain.h"
+#include <dirent.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <dirent.h>
-#include "comain.h"
-#include <unistd.h>
+#include <time.h>
 
 
 #define PL_VERSION "1\n"
@@ -104,6 +105,20 @@ FAIL:
 	return NULL;
 }
 
+
+// inputs: chracteristics, #played, mood, time, day
+int neu_layers[] = {
+	CHAR_COUNT + MOOD_COUNT + 3,
+	10, 5, 3,
+	1
+};
+// since the last layer has only one neuron, the gradient can
+// be pre-computed, up to scaling
+void neu_grad(NeuNet* net) {
+	net->layers[net->layer_count - 1].grad_val[0] = 1;
+}
+
+
 int djay_init(const char* playlist_file, DJayContext* ctx) {
 	// load playlist entries
 	FILE* file = fopen(playlist_file, "r");
@@ -111,7 +126,7 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 #define FAIL CLOSE_FILE
 
 	int entry_count = 0;
-	int entry_cap = 20;
+	int entry_cap = 200;
 	DJEntry* entries = malloc(entry_cap * sizeof(*entries));
 	failif(NULL == entries, "Playlist malloc failed\n");
 #undef FAIL
@@ -183,6 +198,13 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 			.cur = 0,
 			.entries = history,
 		},
+		// TODO: load neunet
+		.neu = neunet_alloc(
+			sizeof(neu_layers) / sizeof(*neu_layers), neu_layers,
+			.1, .7, .99,
+			neu_grad
+		),
+		.mood_conf = 0,
 	};
 
 	memset(result.mood, 0, sizeof(result.mood));
@@ -214,6 +236,7 @@ void djay_free(DJayContext* ctx) {
 		free_entry(&ctx->playlist.entries[j]);
 	}
 	free(ctx->playlist.entries);
+	neunet_free(&ctx->neu);
 }
 
 // implementation bellow
@@ -258,7 +281,72 @@ void djay_prev(DJayContext* ctx) {
 }
 
 
+void feed_ctx(NeuNet* net, DJayContext* ctx) {
+	memcpy(&net->input[CHAR_COUNT + 3], ctx->mood, sizeof(ctx->mood));
+
+	time_t now = time(NULL);
+	struct tm tm = *localtime(&now);
+	float tod = tm.tm_hour * 60 + tm.tm_min;
+	float dow = tm.tm_wday - 1;
+	if (dow < 0) dow = 6;
+
+	// All days shall henceforth have 24 hours. No more, no less.
+	net->input[CHAR_COUNT + 1] = tod / (24 * 60);
+	net->input[CHAR_COUNT + 2] = dow / 7;
+}
+
+void feed_entry(NeuNet* net, const DJEntry* entry) {
+	memcpy(net->input, entry->characteristics, sizeof(entry->characteristics));
+	net->input[CHAR_COUNT] = entry->times_played;
+}
+
 int select_next(DJayContext* ctx) {
-	return random() % ctx->playlist.len;
+	float dist = frand(0.1, ctx->playlist.len);
+	int eid = ctx->playlist.cur;
+
+	NeuNet* neu = &ctx->neu;
+	feed_ctx(neu, ctx);
+
+	while (dist > 0) {
+		eid++;
+		if (eid >= ctx->playlist.len) eid = 0;
+
+		feed_entry(neu, &ctx->playlist.entries[eid]);
+
+		neunet_compute(neu);
+
+		Float dec = (neu->output[0] + 1.1) * 5;
+		dist -= dec;
+	}
+
+	ctx->playlist.entries[eid].times_played++;
+
+	return eid;
+}
+
+void djay_rate(DJayContext* ctx, Float rating) {
+	NeuNet* neu = &ctx->neu;
+	feed_ctx(neu, ctx);
+
+	int eid = ctx->playlist.cur;
+	DJEntry* entry = &ctx->playlist.entries[eid];
+	feed_entry(neu, entry);
+
+	neunet_compute(neu);
+	neunet_backpropagate(neu);
+
+	neunet_step(neu, -rating);
+
+	ctx->mood_conf += rating;
+	Float mult = -rating * .01 * exp(-ctx->mood_conf);
+	for (int i = 0; i < MOOD_COUNT; i++) {
+		ctx->mood[i] += mult * ctx->neu.in_grad[CHAR_COUNT + 1 + i];
+	}
+
+	entry->confidence += rating;
+	mult = -rating * .01 * exp(-entry->confidence);
+	for (int i = 0; i < CHAR_COUNT; i++) {
+		entry->characteristics[i] += mult * ctx->neu.in_grad[i];
+	}
 }
 

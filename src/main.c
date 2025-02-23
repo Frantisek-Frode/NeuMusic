@@ -161,6 +161,7 @@ int main(int argc, const char** argv) {
 					// tui_data.prev_track = tui_data.current_track;
 					free_meta(&tui_data.prev_meta);
 					tui_data.prev_meta = tui_data.cur_meta;
+					djay_rate(&djay_ctx, -.9);
 					djay_next(&djay_ctx);
 					goto BREAK_PLAYBACK;
 				case ACTION_PREV:
@@ -182,6 +183,7 @@ int main(int argc, const char** argv) {
 
 		free_meta(&tui_data.prev_meta);
 		tui_data.prev_meta = tui_data.cur_meta;
+		djay_rate(&djay_ctx, 1);
 		djay_next(&djay_ctx);
 BREAK_PLAYBACK:
 		// cleanup
