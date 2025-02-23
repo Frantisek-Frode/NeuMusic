@@ -1,12 +1,26 @@
 #pragma once
 #define _Nullable
 
+#define CHAR_COUNT 5
+typedef struct {
+	float confidence;
+	float characteristics[CHAR_COUNT];
+
+	int index;
+	const char* path;
+
+	int times_played;
+} DJEntry;
+
+#define MOOD_COUNT 3
 typedef struct {
 	struct {
 		int len;
 		int cur;
-		char** entries;
+		DJEntry* entries;
 	} playlist;
+
+	float mood[MOOD_COUNT];
 
 	int base_path_len;
 	char* current_path;

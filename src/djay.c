@@ -6,9 +6,62 @@
 #include "comain.h"
 #include <unistd.h>
 
-#define PL_SUFFIX ".mus"
 
-// @linux
+#define PL_VERSION "1\n"
+
+
+float frand(float min, float max) {
+	long val = random();
+	double val2 = (double)val / (double)RAND_MAX;
+
+	return val2 * (max - min) + min;
+}
+
+int read_entry(FILE* file, DJEntry* data, int* path_length) {
+	DJEntry entry;
+	char buffer[1000];
+
+	int read = fscanf(file, "[%a;%a,%a,%a,%a,%a]%999[^\n]\n",
+		&entry.confidence,
+		&entry.characteristics[0],
+		&entry.characteristics[1],
+		&entry.characteristics[2],
+		&entry.characteristics[3],
+		&entry.characteristics[4],
+		buffer
+	);
+
+	if (read != 2 + CHAR_COUNT) {
+		read = fscanf(file, "%999[^\n]\n", buffer);
+		if (read <= 0) return 1; // EOF
+
+		entry.confidence = 0;
+		for (int i = 0; i < CHAR_COUNT; i++) {
+			entry.characteristics[i] = frand(-.1, .1);
+		}
+	}
+
+	int path_len = strlen(buffer) + 1;
+	entry.path = malloc(path_len);
+	if (entry.path == NULL) {
+		fprintf(stderr, "OOM\n");
+		return -1;
+	}
+	memcpy((char*)entry.path, buffer, path_len);
+
+	entry.times_played = 0;
+
+	*path_length = path_len;
+	*data = entry;
+	return 0;
+}
+
+void free_entry(DJEntry* entry) {
+	free((char*)entry->path);
+}
+
+
+#define PL_SUFFIX ".mus"
 const char* djay_create_playlist(const char* dir_name, const char* _Nullable filename) {
 	if (NULL == filename) {
 		filename = "playlist"PL_SUFFIX;
@@ -29,6 +82,7 @@ const char* djay_create_playlist(const char* dir_name, const char* _Nullable fil
 	FILE* file = fopen(fullname, "w");
 	if (NULL == file) { fprintf(stderr, "Could not open playlist file '%s'\n", fullname); closedir(dir); goto FAIL; }
 
+// @linux
 	struct dirent* entry;
 	while ((entry = readdir(dir)) != NULL) {
 		if (entry->d_type != DT_REG) continue;
@@ -51,50 +105,39 @@ FAIL:
 }
 
 int djay_init(const char* playlist_file, DJayContext* ctx) {
+	// load playlist entries
 	FILE* file = fopen(playlist_file, "r");
 	if (file == NULL) return -1;
 #define FAIL CLOSE_FILE
 
-	int length;
-	{
-		failif (0 > fseek(file, 0, SEEK_END), "Playlist seek failed\n");
-		length = ftell(file);
-		failif (0 > length, "Playlist tell failed\n");
-		failif (0 > fseek(file, 0, SEEK_SET), "Playlist rewind failed\n");
-	}
-
-	char* buffer = malloc(length);
-	failif (NULL == buffer, "Playlist malloc failed\n");
+	int entry_count = 0;
+	int entry_cap = 20;
+	DJEntry* entries = malloc(entry_cap * sizeof(*entries));
+	failif(NULL == entries, "Playlist malloc failed\n");
 #undef FAIL
-#define FAIL FREE_BUFFER
+#define FAIL FREE_ENTIRES
 
-	failif (length - 1 != fread(buffer, 1, length - 1, file), "Playlist read failed\n");
-
-	int count = 1;
-	for (int i = 0; i < length - 1; i++) {
-		if (buffer[i] == '\n') count++;
-	}
-	// failif (0 == count, "Empty or invalid playlist\n");
-
-	buffer[length - 1] = '\0';
-
-	char** playlist = malloc(count * sizeof(*playlist));
-	failif(NULL == playlist, "Playlist malloc 2 failed\n");
-#undef FAIL
-#define FAIL FREE_PLAYLIST
-
-	playlist[0] = buffer;
-	int pl_index = 1;
-	for (int i = 1; i < length; i++) {
-		if (buffer[i - 1] == '\n') {
-			playlist[pl_index] = buffer + i;
-			buffer[i - 1] = '\0';
-			pl_index++;
+	int max_name = 0;
+	for (int i = 0, failed = 0; !failed; i++) {
+		if (i == entry_cap) {
+			entry_cap *= 2;
+			entries = realloc(entries, entry_cap * sizeof(*entries));
+			failif(NULL == entries, "Playlist malloc failed\n");
 		}
+
+		int name_len;
+		failed = read_entry(file, &entries[i], &name_len);
+		if (failed < 0) goto FAIL;
+		if (max_name < name_len) max_name = name_len;
+		entry_count = i;
 	}
+	entries = realloc(entries, entry_count * sizeof(*entries));
+	entry_cap = entry_count;
 
 	fclose(file);
 
+
+	// prepare absolute-ish path
 	int path_len = strlen(playlist_file);
 	int last_slash = path_len;
 	for (int i = path_len - 1; path_len >= 0; i--) {
@@ -102,13 +145,6 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 			last_slash = i;
 			break;
 		}
-	}
-
-	// techn. not necessary; can be done above
-	int max_name = 0;
-	for (int i = 0; i < count; i++) {
-		int len = strlen(playlist[i]);
-		if (len > max_name) max_name = len;
 	}
 
 	char* base_path = malloc(last_slash + 1 + max_name + 1);
@@ -120,21 +156,25 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 	base_path[last_slash + max_name + 1] = '\0';
 	memcpy(base_path, playlist_file, last_slash);
 
+
+	// fill history
 	int hist_len = 10;
 	int* history = malloc(hist_len * sizeof(*history));
 	failif(NULL == history, "Playlist malloc 4 failed\n");
 	for (int i = 0; i < hist_len; i++) {
-		int r = random() % count;
+		int r = random() % entry_count;
 		history[i] = r;
 	}
 #undef FAIL
 #define FAIL FREE_HISTORY
 
+
+	// set results and select track
 	DJayContext result = {
 		.playlist = {
-			.len = count,
+			.len = entry_count,
 			.cur = 0,
-			.entries = playlist,
+			.entries = entries,
 		},
 		.base_path_len = last_slash + 1,
 		.current_path = base_path,
@@ -144,19 +184,24 @@ int djay_init(const char* playlist_file, DJayContext* ctx) {
 			.entries = history,
 		},
 	};
+
+	memset(result.mood, 0, sizeof(result.mood));
 	*ctx = result;
 
 	djay_next(ctx);
 	return 0;
 
+
+	// error handling
 FREE_HISTORY:
 	free(history);
 FREE_PATH:
 	free(base_path);
-FREE_PLAYLIST:
-	free(playlist);
-FREE_BUFFER:
-	free(buffer);
+FREE_ENTIRES:
+	for (int j = 0; j < entry_count; j++) {
+		free_entry(&entries[j]);
+	}
+	free(entries);
 CLOSE_FILE:
 	fclose(file);
 	return -1;
@@ -165,9 +210,14 @@ CLOSE_FILE:
 void djay_free(DJayContext* ctx) {
 	free(ctx->history.entries);
 	free(ctx->current_path);
-	free((void*)ctx->playlist.entries[0]);
+	for (int j = 0; j < ctx->playlist.len; j++) {
+		free_entry(&ctx->playlist.entries[j]);
+	}
 	free(ctx->playlist.entries);
 }
+
+// implementation bellow
+int select_next(DJayContext* ctx);
 
 void djay_next(DJayContext* ctx) {
 	int last = ctx->history.cur;
@@ -183,11 +233,11 @@ void djay_next(DJayContext* ctx) {
 
 		ctx->playlist.cur
 			= ctx->history.entries[ctx->history.cur]
-			= random() % ctx->playlist.len;
+			= select_next(ctx);
 	}
 
 	strcpy(ctx->current_path + ctx->base_path_len,
-		ctx->playlist.entries[ctx->playlist.cur]);
+		ctx->playlist.entries[ctx->playlist.cur].path);
 }
 
 void djay_prev(DJayContext* ctx) {
@@ -204,6 +254,11 @@ void djay_prev(DJayContext* ctx) {
 
 	ctx->playlist.cur = ctx->history.entries[ctx->history.cur];
 	strcpy(ctx->current_path + ctx->base_path_len,
-		ctx->playlist.entries[ctx->playlist.cur]);
+		ctx->playlist.entries[ctx->playlist.cur].path);
+}
+
+
+int select_next(DJayContext* ctx) {
+	return random() % ctx->playlist.len;
 }
 
